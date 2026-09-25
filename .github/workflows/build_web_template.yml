@@ -45,7 +45,7 @@ jobs:
 
       - name: Copy Custom Build Configuration
         run: |
-          cp build_template/custom.py godot-src/custom.py
+          cp tools/custom.py godot-src/custom.py
 
       - name: Compile Godot Web Release Template
         working-directory: godot-src

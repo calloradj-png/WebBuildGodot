@@ -85,9 +85,9 @@
 1. Выполните экспорт проекта:
    - Через Godot Editor: **Project -> Export -> Web -> Export Project** в папку `build/web/index.html`.
    - Или из консоли:
-     ```powershell
-     & "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe" --headless --export-release "Web" build/web/index.html
-     ```
+	 ```powershell
+	 & "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe" --headless --export-release "Web" build/web/index.html
+	 ```
 
 2. Запустите локальный оптимизированный сервер:
    ```powershell

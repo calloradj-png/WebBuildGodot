@@ -1,12 +1,18 @@
 [gd_scene format=3 uid="uid://de4vr7a8ga1t8"]
 
 [ext_resource type="Texture2D" uid="uid://b3rqwaghpkd5l" path="res://icon.svg" id="1_wtcfe"]
+[ext_resource type="Shader" uid="uid://dbvkyhhwi38kb" path="res://node_2d.gdshader" id="2_0e48y"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_p01jb"]
 size = Vector2(128.52675, 124.87802)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_e8nxs"]
 size = Vector2(126, 126)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_e8nxs"]
+shader = ExtResource("2_0e48y")
+shader_parameter/speed = 4.0
+shader_parameter/amplitude = 3.0
 
 [node name="Node2D" type="Node2D" unique_id=1696890871]
 
@@ -32,3 +38,23 @@ texture = ExtResource("1_wtcfe")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="RigidBody2D" unique_id=1609959914]
 shape = SubResource("RectangleShape2D_e8nxs")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=742185338]
+
+[node name="Label" type="Label" parent="CanvasLayer" unique_id=1132919704]
+material = SubResource("ShaderMaterial_e8nxs")
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -30.5
+offset_top = -11.5
+offset_right = 30.5
+offset_bottom = 11.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 47
+text = "Hi guys!"
+horizontal_alignment = 1
+vertical_alignment = 1
