@@ -1,0 +1,81 @@
+name: Build Minimal 2D Web Export Template
+
+on:
+  workflow_dispatch:
+    inputs:
+      godot_version:
+        description: 'Godot version tag (e.g. 4.7.2-stable, 4.7.1-stable, 4.6-stable)'
+        required: true
+        default: '4.7.2-stable'
+      emscripten_version:
+        description: 'Emscripten SDK version'
+        required: true
+        default: '3.1.64'
+
+jobs:
+  build-web-template:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up SCons
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install scons
+
+      - name: Set up Emscripten cache
+        id: emscripten-cache
+        uses: actions/cache@v4
+        with:
+          path: 'emsdk-cache'
+          key: ${{ runner.os }}-emsdk-${{ inputs.emscripten_version }}
+
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v3
+        with:
+          version: ${{ inputs.emscripten_version }}
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Verify Emscripten
+        run: emcc --version
+
+      - name: Clone Godot Engine Source
+        run: |
+          git clone --depth 1 --branch ${{ inputs.godot_version }} https://github.com/godotengine/godot.git godot-src
+
+      - name: Copy Custom Build Configuration
+        run: |
+          cp build_template/custom.py godot-src/custom.py
+
+      - name: Compile Godot Web Release Template
+        working-directory: godot-src
+        run: |
+          scons profile=custom.py -j$(nproc)
+
+      - name: Package Export Template
+        working-directory: godot-src
+        run: |
+          mkdir -p ../dist
+          # Find the generated zip or package bin/ files into web_nothreads_release.zip
+          if [ -f bin/godot.web.template_release.wasm32.zip ]; then
+            cp bin/godot.web.template_release.wasm32.zip ../dist/web_nothreads_release.zip
+          elif [ -f bin/godot.web.template_release.wasm32.nothreads.zip ]; then
+            cp bin/godot.web.template_release.wasm32.nothreads.zip ../dist/web_nothreads_release.zip
+          else
+            cd bin
+            zip -j ../../dist/web_nothreads_release.zip *template_release*
+            cd ..
+          fi
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-${{ inputs.godot_version }}-2d-minimal-web-template
+          path: dist/web_nothreads_release.zip
+          retention-days: 30
