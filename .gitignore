@@ -3,6 +3,7 @@
 /android/
 build/
 bin/
+build.zip
 godot-source/
 __pycache__/
 *.pyc

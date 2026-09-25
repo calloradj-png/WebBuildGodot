@@ -1,0 +1,12 @@
+{
+  "name": "2d-web",
+  "version": "1.0.0",
+  "description": "2D Web Godot Game for Yandex Games",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.js",
+    "build:yandex": "node tools/build.js --platform yandex",
+    "build:export": "node tools/build.js --export --platform yandex",
+    "serve": "python tools/compress_and_serve.py"
+  }
+}

@@ -1,208 +1,1061 @@
 <!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>$GODOT_PROJECT_NAME</title>
-    $GODOT_HEAD_INCLUDE
-    <style>
-        :root {
-            --bg-color: #0d0f12;
-            --accent-color: #4387f6;
-            --accent-glow: rgba(67, 135, 246, 0.4);
-            --text-color: #e6edf3;
-            --muted-color: #8b949e;
-        }
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+		<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
+		<meta http-equiv="Pragma" content="no-cache">
+		<meta http-equiv="Expires" content="0">
+		<title>$GODOT_PROJECT_NAME</title>
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-touch-callout: none;
-        }
+		<!-- Target Platform SDK Script (Yandex Games / CrazyGames / Generic) -->
+		$PLATFORM_SDK_HEADER
 
-        html, body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            touch-action: none;
-        }
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,800;0,900;1,800;1,900&display=swap" rel="stylesheet">
 
-        #canvas {
-            display: block;
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            outline: none;
-            border: none;
-            z-index: 1;
-        }
+		<!-- Preload critical game assets early in parallel -->
+		<link rel="preload" href="index.wasm.gz" as="fetch" crossorigin>
+		<link rel="preload" href="index.pck.gz" as="fetch" crossorigin>
+		<link rel="preload" href="cover.webp?v=$BUILD_HASH" as="image">
 
-        #loading-screen {
-            position: fixed;
-            inset: 0;
-            z-index: 999;
-            background: radial-gradient(circle at center, #161b22 0%, #0d0f12 100%);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            transition: opacity 0.35s ease-out, visibility 0.35s ease-out;
-        }
+		<script>
+		// Immediately unregister any old ServiceWorkers & purge CacheStorage
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.getRegistrations().then(function(regs) {
+				for (const r of regs) r.unregister();
+			});
+		}
+		if ('caches' in window) {
+			caches.keys().then(function(names) {
+				for (const n of names) caches.delete(n);
+			});
+		}
 
-        .loader-card {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            max-width: 320px;
-            width: 85%;
-            text-align: center;
-        }
+		// Transparent Gzip Fetch Interceptor with Direct Native Streaming
+		(function() {
+			const origFetch = window.fetch;
+			window.fetch = async function(resource, init) {
+				const url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');
+				
+				if (url && /\bindex\.(wasm|pck)(\?.*)?$/i.test(url)) {
+					const isWasm = /index\.wasm/i.test(url);
+					
+					try {
+						// 1. Try fetching .gz first for maximum speed & minimal bandwidth
+						let res = null;
+						try {
+							const gzUrl = url.replace(/\bindex\.(wasm|pck)/i, 'index.$1.gz');
+							const gzRes = await origFetch(gzUrl, init);
+							if (gzRes && gzRes.ok) {
+								res = gzRes;
+							}
+						} catch(e) {}
 
-        .spinner-ring {
-            width: 54px;
-            height: 54px;
-            border-radius: 50%;
-            border: 3px solid rgba(255, 255, 255, 0.08);
-            border-top-color: var(--accent-color);
-            box-shadow: 0 0 15px var(--accent-glow);
-            animation: spin 0.8s linear infinite;
-            margin-bottom: 24px;
-        }
+						if (!res || !res.ok) {
+							res = await origFetch(url, init);
+						}
 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
+						if (!res || !res.ok) {
+							return res;
+						}
 
-        .game-title {
-            font-size: 1.25rem;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            margin-bottom: 18px;
-            color: #ffffff;
-        }
+						// 2. Check if server/CDN sent Content-Encoding
+						const encoding = (res.headers.get('Content-Encoding') || '').toLowerCase();
+						if (encoding.includes('gzip') || encoding.includes('deflate') || encoding.includes('br')) {
+							return new Response(res.body, {
+								status: res.status,
+								statusText: res.statusText,
+								headers: {
+									'Content-Type': isWasm ? 'application/wasm' : 'application/octet-stream'
+								}
+							});
+						}
 
-        .progress-bar-wrap {
-            width: 100%;
-            height: 6px;
-            background: rgba(255, 255, 255, 0.08);
-            border-radius: 3px;
-            overflow: hidden;
-            position: relative;
-            margin-bottom: 12px;
-        }
+						// 3. If fetched .gz file without Content-Encoding header, pipe via native C++ DecompressionStream
+						if (typeof DecompressionStream !== 'undefined' && res.url && res.url.includes('.gz')) {
+							const ds = new DecompressionStream('gzip');
+							return new Response(res.body.pipeThrough(ds), {
+								status: res.status,
+								statusText: res.statusText,
+								headers: {
+									'Content-Type': isWasm ? 'application/wasm' : 'application/octet-stream'
+								}
+							});
+						}
 
-        .progress-bar-fill {
-            width: 0%;
-            height: 100%;
-            background: linear-gradient(90deg, #3b82f6, #60a5fa);
-            border-radius: 3px;
-            transition: width 0.15s ease-out;
-            box-shadow: 0 0 8px var(--accent-glow);
-        }
+						return res;
+					} catch(e) {
+						console.warn('[Fetch Decompress] fallback:', e);
+					}
+				}
+				
+				return origFetch.apply(this, arguments);
+			};
+		})();
 
-        .status-row {
-            display: flex;
-            justify-content: space-between;
-            width: 100%;
-            font-size: 0.82rem;
-            color: var(--muted-color);
-            font-weight: 500;
-        }
+		// Ensure full document enters fullscreen so HTML loading overlays remain visible
+		(function() {
+			function redirectFullscreen(proto) {
+				if (!proto) return;
+				const origReq = proto.requestFullscreen || proto.webkitRequestFullscreen || proto.mozRequestFullScreen || proto.msRequestFullscreen;
+				if (!origReq) return;
+				proto.requestFullscreen = function(options) {
+					const root = document.documentElement;
+					if (root.requestFullscreen) return root.requestFullscreen(options);
+					if (root.webkitRequestFullscreen) return root.webkitRequestFullscreen(options);
+					if (root.mozRequestFullScreen) return root.mozRequestFullScreen(options);
+					if (root.msRequestFullscreen) return root.msRequestFullscreen(options);
+					return origReq.apply(this, arguments);
+				};
+			}
+			redirectFullscreen(HTMLCanvasElement.prototype);
+		})();
+		</script>
 
-        #error-notice {
-            display: none;
-            margin-top: 16px;
-            padding: 10px 14px;
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid rgba(239, 68, 68, 0.35);
-            border-radius: 6px;
-            color: #fca5a5;
-            font-size: 0.82rem;
-            line-height: 1.4;
-        }
-    </style>
-</head>
-<body>
-    <canvas id="canvas">
-        Ваш браузер не поддерживает HTML5 Canvas.
-    </canvas>
+		<style>
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			html, body, :fullscreen, ::backdrop {
+				width: 100%;
+				width: 100dvw;
+				height: 100%;
+				height: 100dvh;
+				background-color: #000000;
+				color: #ffffff;
+				font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+				overflow: hidden;
+				touch-action: none;
+				position: fixed;
+				top: 0;
+				left: 0;
+			}
+			#canvas {
+				display: block;
+				width: 100vw;
+				width: 100dvw;
+				height: 100vh;
+				height: 100dvh;
+			}
+			#canvas:focus {
+				outline: none;
+			}
 
-    <div id="loading-screen">
-        <div class="loader-card">
-            <div class="spinner-ring" id="spinner"></div>
-            <div class="game-title">$GODOT_PROJECT_NAME</div>
-            <div class="progress-bar-wrap">
-                <div class="progress-bar-fill" id="progress-fill"></div>
-            </div>
-            <div class="status-row">
-                <span id="status-label">Загрузка...</span>
-                <span id="status-percent">0%</span>
-            </div>
-            <div id="error-notice"></div>
-        </div>
-    </div>
+			/* Loading Screen Container */
+			#status {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				width: 100dvw;
+				height: 100vh;
+				height: 100dvh;
+				background-color: #000000;
+				overflow: hidden;
+				z-index: 99999;
+				opacity: 1;
+				visibility: visible;
+				pointer-events: auto;
+			}
 
-    <script src="$GODOT_URL"></script>
-    <script>
-        (function() {
-            const loadingScreen = document.getElementById('loading-screen');
-            const progressFill = document.getElementById('progress-fill');
-            const statusLabel = document.getElementById('status-label');
-            const statusPercent = document.getElementById('status-percent');
-            const errorNotice = document.getElementById('error-notice');
-            const spinner = document.getElementById('spinner');
+			#cover-bg {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				object-fit: cover;
+				object-position: center;
+				user-select: none;
+				pointer-events: none;
+			}
 
-            function showError(err) {
-                const message = (err && err.message) ? err.message : String(err);
-                errorNotice.textContent = message;
-                errorNotice.style.display = 'block';
-                spinner.style.borderTopColor = '#ef4444';
-                spinner.style.boxShadow = '0 0 15px rgba(239, 68, 68, 0.4)';
-                statusLabel.textContent = 'Ошибка запуска';
-            }
+			/* Corner Wrapper - rigidly locked to corner.png exact 1176/354 aspect ratio */
+			#corner-wrapper {
+				position: absolute;
+				right: env(safe-area-inset-right, 0px);
+				bottom: env(safe-area-inset-bottom, 0px);
+				width: min(82vw, 82dvw, calc(58dvh * 3.322));
+				aspect-ratio: 1176 / 354;
+				pointer-events: none;
+				user-select: none;
+				z-index: 10;
+				container-type: inline-size;
+				container-name: corner;
+			}
 
-            if (!Engine.isWebGLAvailable()) {
-                showError('Браузер или видеокарта не поддерживает WebGL 2.0.');
-                return;
-            }
+			#corner-img {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				object-fit: fill;
+				display: block;
+				pointer-events: none;
+				user-select: none;
+			}
 
-            const engine = new Engine($GODOT_CONFIG);
+			#loading-container {
+				position: absolute;
+				bottom: 34%;
+				right: 14%;
+				display: flex;
+				align-items: baseline;
+				justify-content: flex-end;
+				gap: 0.6cqi;
+				transform: rotate(-12deg);
+				transform-origin: right center;
+				z-index: 20;
+				user-select: none;
+				pointer-events: none;
+				white-space: nowrap;
+			}
 
-            engine.startGame({
-                'onProgress': function(current, total) {
-                    if (total > 0) {
-                        const pct = Math.min(100, Math.round((current / total) * 100));
-                        progressFill.style.width = pct + '%';
-                        statusPercent.textContent = pct + '%';
-                        if (pct >= 100) {
-                            statusLabel.textContent = 'Запуск...';
-                        }
-                    }
-                }
-            }).then(() => {
-                progressFill.style.width = '100%';
-                statusPercent.textContent = '100%';
-                statusLabel.textContent = 'Готово';
+			#loading-label {
+				font-family: 'Montserrat', sans-serif;
+				font-weight: 900;
+				font-size: clamp(18px, 6.0cqi, 70px);
+				color: #ffffff;
+				letter-spacing: -0.03em;
+				line-height: 1;
+			}
 
-                // Buffer short frame to avoid canvas flash
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        loadingScreen.style.opacity = '0';
-                        loadingScreen.style.visibility = 'hidden';
-                        setTimeout(() => {
-                            loadingScreen.remove();
-                        }, 400);
-                    });
-                });
-            }).catch(showError);
-        })();
-    </script>
-</body>
+			#progress-val {
+				font-family: 'Montserrat', sans-serif;
+				font-weight: 900;
+				font-size: clamp(18px, 6.0cqi, 70px);
+				color: #ffffff;
+				font-variant-numeric: tabular-nums;
+				font-feature-settings: "tnum";
+				letter-spacing: -0.03em;
+				line-height: 1;
+				display: inline-block;
+				min-width: 2.8ch;
+				text-align: left;
+			}
+
+			#spinner {
+				position: absolute;
+				right: 3.5%;
+				bottom: 12%;
+				width: clamp(22px, 5.5cqi, 64px);
+				height: clamp(22px, 5.5cqi, 64px);
+				border: clamp(3px, 0.65cqi, 7px) solid rgba(255, 255, 255, 0.22);
+				border-top-color: #ffffff;
+				border-radius: 50%;
+				animation: loading-spin 0.75s linear infinite;
+				user-select: none;
+				pointer-events: none;
+				z-index: 25;
+			}
+
+			@keyframes loading-spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
+
+			#status-notice {
+				display: none;
+				margin-top: 4px;
+				padding: 4px 8px;
+				background: rgba(239, 68, 68, 0.7);
+				border-radius: 4px;
+				color: #ffffff;
+				font-size: clamp(10px, 2.2cqi, 16px);
+			}
+
+			#build-watermark {
+				position: fixed;
+				bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+				left: calc(12px + env(safe-area-inset-left, 0px));
+				font-family: 'Montserrat', monospace, sans-serif;
+				font-size: clamp(10px, 1.2vw, 14px);
+				font-weight: 700;
+				color: rgba(255, 255, 255, 0.6);
+				z-index: 1000000;
+				pointer-events: none;
+				user-select: none;
+			}
+
+			/* ──────── Circle Grid Wave Wipe Transition ──────── */
+			#grid-iris-layer {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				width: 100dvw;
+				height: 100vh;
+				height: 100dvh;
+				pointer-events: none;
+				z-index: 100001;
+				visibility: hidden;
+				overflow: hidden;
+				display: grid;
+				grid-template-columns: repeat(10, 1fr);
+				grid-template-rows: repeat(6, 1fr);
+			}
+
+			.grid-cell {
+				position: relative;
+				width: 100%;
+				height: 100%;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				overflow: visible;
+			}
+
+			.grid-circle {
+				position: absolute;
+				width: 18vmax;
+				height: 18vmax;
+				border-radius: 50%;
+				background: #000000;
+				transform: scale(0);
+				will-change: transform;
+				pointer-events: none;
+			}
+		</style>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+		<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+		$GODOT_HEAD_INCLUDE
+	</head>
+	<body>
+		<canvas id="canvas">
+			Ваш браузер не поддерживает WebAssembly / WebGL.
+		</canvas>
+
+		<noscript>
+			Для работы игры включите JavaScript в браузере.
+		</noscript>
+
+		<div id="build-watermark">Build: $BUILD_TAG</div>
+
+		<!-- Main Loading Screen -->
+		<div id="status">
+			<img id="cover-bg" src="cover.webp?v=$BUILD_HASH" alt="Cover" />
+
+			<div id="corner-wrapper">
+				<img id="corner-img" src="corner.png?v=$BUILD_HASH" alt="Corner" />
+
+				<div id="loading-container">
+					<span id="loading-label">Loading...</span>
+					<span id="progress-val">0%</span>
+					<div id="status-notice"></div>
+				</div>
+				<script>
+				(function() {
+					try {
+						const urlParams = new URLSearchParams(window.location.search);
+						const qLang = (urlParams.get('lang') || urlParams.get('locale') || urlParams.get('language') || '').toLowerCase();
+						const saved = localStorage.getItem('playtopia_lang');
+						const navLang = (navigator.languages && navigator.languages.length ? navigator.languages[0] : (navigator.language || '')).toLowerCase();
+						const isRu = saved === 'ru' || (!saved && (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(qLang) || /^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(navLang)));
+						const lbl = document.getElementById('loading-label');
+						if (lbl && isRu) lbl.textContent = 'Загрузка...';
+					} catch(e) {}
+				})();
+				</script>
+
+				<div id="spinner"></div>
+			</div>
+		</div>
+
+		<!-- Staggered Circle Grid Layer -->
+		<div id="grid-iris-layer"></div>
+
+		<script>
+		window.__PLATFORM__ = '$PLATFORM_NAME';
+
+		window.PlatformSDK = (function() {
+			let ysdk = null;
+			let currentPlatform = window.__PLATFORM__ || 'generic';
+			let isReadySignaled = false;
+			let isInitializing = false;
+
+			async function init() {
+				if (isInitializing && ysdk) return;
+				isInitializing = true;
+				console.log('[PlatformSDK JS] Initializing for platform: ' + currentPlatform);
+
+				if (currentPlatform === 'yandex') {
+					let attempts = 0;
+					while (typeof YaGames === 'undefined' && attempts < 50) {
+						await new Promise(r => setTimeout(r, 100));
+						attempts++;
+					}
+					if (typeof YaGames !== 'undefined') {
+						try {
+							ysdk = await YaGames.init();
+							window.ysdk = ysdk;
+							console.log('[PlatformSDK JS] YaGames SDK successfully initialized (IT).');
+
+							// Explicitly access i18n properties immediately so Yandex SDK registers i18n usage in debug panel
+							let yLang = '';
+							if (ysdk.environment && ysdk.environment.i18n && ysdk.environment.i18n.lang) {
+								yLang = ysdk.environment.i18n.lang;
+								console.log('[PlatformSDK JS] Yandex SDK i18n.lang registered:', yLang);
+							}
+							if (ysdk.environment && ysdk.environment.browser && ysdk.environment.browser.lang) {
+								console.log('[PlatformSDK JS] Yandex SDK browser.lang registered:', ysdk.environment.browser.lang);
+							}
+
+							if (window.__godot_sdk_cb) {
+								window.__godot_sdk_cb(['sdk_ready', 'yandex']);
+								if (yLang) {
+									window.__godot_sdk_cb(['language_detected', yLang]);
+								}
+							}
+						} catch (err) {
+							console.warn('[PlatformSDK JS] YaGames init error:', err);
+						}
+					} else {
+						console.warn('[PlatformSDK JS] YaGames script not detected after timeout.');
+					}
+				} else if (currentPlatform === 'crazygames') {
+					let attempts = 0;
+					while ((!window.CrazyGames || !window.CrazyGames.SDK) && attempts < 50) {
+						await new Promise(r => setTimeout(r, 100));
+						attempts++;
+					}
+					if (window.CrazyGames && window.CrazyGames.SDK) {
+						try {
+							await window.CrazyGames.SDK.init();
+							console.log('[PlatformSDK JS] CrazyGames SDK v3 successfully initialized.');
+							if (window.CrazyGames.SDK.game && window.CrazyGames.SDK.game.loadingStart) {
+								window.CrazyGames.SDK.game.loadingStart();
+							}
+							if (window.__godot_sdk_cb) {
+								window.__godot_sdk_cb(['sdk_ready', 'crazygames']);
+							}
+						} catch (err) {
+							console.warn('[PlatformSDK JS] CrazyGames init error:', err);
+						}
+					}
+				} else {
+					console.log('[PlatformSDK JS] Generic / Mock platform active.');
+				}
+			}
+
+			async function gameReady() {
+				if (isReadySignaled) return;
+				isReadySignaled = true;
+				console.log('[PlatformSDK JS] gameReady / GRA triggered');
+
+				if (currentPlatform === 'yandex') {
+					if (!ysdk) {
+						await init();
+					}
+					if (ysdk && ysdk.features && ysdk.features.LoadingAPI) {
+						try {
+							ysdk.features.LoadingAPI.ready();
+							console.log('[PlatformSDK JS] ysdk.features.LoadingAPI.ready() called.');
+						} catch (e) {
+							console.warn('[PlatformSDK JS] LoadingAPI.ready error:', e);
+						}
+					}
+				} else if (currentPlatform === 'crazygames') {
+					if (window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.game) {
+						try {
+							if (window.CrazyGames.SDK.game.loadingStop) {
+								window.CrazyGames.SDK.game.loadingStop();
+								console.log('[PlatformSDK JS] CrazyGames.SDK.game.loadingStop() called.');
+							}
+						} catch (e) {
+							console.warn('[PlatformSDK JS] CrazyGames loadingStop error:', e);
+						}
+					}
+				}
+			}
+
+			function gameplayStart() {
+				console.log('[PlatformSDK JS] gameplayStart');
+				if (currentPlatform === 'yandex' && ysdk && ysdk.features && ysdk.features.GameplayAPI) {
+					try {
+						ysdk.features.GameplayAPI.start();
+					} catch (e) {}
+				} else if (currentPlatform === 'crazygames' && window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.game) {
+					try {
+						if (window.CrazyGames.SDK.game.gameplayStart) {
+							window.CrazyGames.SDK.game.gameplayStart();
+						}
+					} catch (e) {}
+				}
+			}
+
+			function gameplayStop() {
+				console.log('[PlatformSDK JS] gameplayStop');
+				if (currentPlatform === 'yandex' && ysdk && ysdk.features && ysdk.features.GameplayAPI) {
+					try {
+						ysdk.features.GameplayAPI.stop();
+					} catch (e) {}
+				} else if (currentPlatform === 'crazygames' && window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.game) {
+					try {
+						if (window.CrazyGames.SDK.game.gameplayStop) {
+							window.CrazyGames.SDK.game.gameplayStop();
+						}
+					} catch (e) {}
+				}
+			}
+
+			function showInterstitial() {
+				console.log('[PlatformSDK JS] showInterstitial');
+				if (currentPlatform === 'yandex' && ysdk && ysdk.adv) {
+					ysdk.adv.showFullscreenAdv({
+						callbacks: {
+							onOpen: () => {
+								if (window.__godot_sdk_cb) window.__godot_sdk_cb(['interstitial_opened']);
+							},
+							onClose: (wasShown) => {
+								if (window.__godot_sdk_cb) window.__godot_sdk_cb(['interstitial_closed', Boolean(wasShown)]);
+							},
+							onError: (err) => {
+								console.warn('[PlatformSDK JS] Yandex fullscreen adv error:', err);
+								if (window.__godot_sdk_cb) window.__godot_sdk_cb(['interstitial_closed', false]);
+							}
+						}
+					});
+				} else if (currentPlatform === 'crazygames' && window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.ad) {
+					window.CrazyGames.SDK.ad.requestAd('midgame', {
+						adStarted: () => {
+							if (window.__godot_sdk_cb) window.__godot_sdk_cb(['interstitial_opened']);
+						},
+						adFinished: () => {
+							if (window.__godot_sdk_cb) window.__godot_sdk_cb(['interstitial_closed', true]);
+						},
+						adError: (err) => {
+							console.warn('[PlatformSDK JS] CrazyGames midgame error:', err);
+							if (window.__godot_sdk_cb) window.__godot_sdk_cb(['interstitial_closed', false]);
+						}
+					});
+				} else {
+					console.log('[PlatformSDK JS] Mock Interstitial Ad');
+					if (window.__godot_sdk_cb) {
+						window.__godot_sdk_cb(['interstitial_opened']);
+						setTimeout(() => window.__godot_sdk_cb(['interstitial_closed', true]), 300);
+					}
+				}
+			}
+
+			function showRewarded() {
+				console.log('[PlatformSDK JS] showRewarded');
+				if (currentPlatform === 'yandex' && ysdk && ysdk.adv) {
+					ysdk.adv.showRewardedVideo({
+						callbacks: {
+							onOpen: () => {},
+							onRewarded: () => {
+								if (window.__godot_sdk_cb) window.__godot_sdk_cb(['rewarded_rewarded']);
+							},
+							onClose: () => {
+								if (window.__godot_sdk_cb) window.__godot_sdk_cb(['rewarded_closed', true]);
+							},
+							onError: (err) => {
+								console.warn('[PlatformSDK JS] Yandex rewarded adv error:', err);
+								if (window.__godot_sdk_cb) window.__godot_sdk_cb(['rewarded_closed', false]);
+							}
+						}
+					});
+				} else if (currentPlatform === 'crazygames' && window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.ad) {
+					window.CrazyGames.SDK.ad.requestAd('rewarded', {
+						adStarted: () => {},
+						adFinished: () => {
+							if (window.__godot_sdk_cb) {
+								window.__godot_sdk_cb(['rewarded_rewarded']);
+								window.__godot_sdk_cb(['rewarded_closed', true]);
+							}
+						},
+						adError: (err) => {
+							console.warn('[PlatformSDK JS] CrazyGames rewarded error:', err);
+							if (window.__godot_sdk_cb) window.__godot_sdk_cb(['rewarded_closed', false]);
+						}
+					});
+				} else {
+					console.log('[PlatformSDK JS] Mock Rewarded Ad');
+					if (window.__godot_sdk_cb) {
+						window.__godot_sdk_cb(['rewarded_rewarded']);
+						setTimeout(() => window.__godot_sdk_cb(['rewarded_closed', true]), 300);
+					}
+				}
+			}
+
+			function happyTime() {
+				if (currentPlatform === 'crazygames' && window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.game && window.CrazyGames.SDK.game.happytime) {
+					window.CrazyGames.SDK.game.happytime();
+				}
+			}
+
+			let yPlayer = null;
+
+			async function getPlayerSafe() {
+				if (!yPlayer && ysdk && ysdk.getPlayer) {
+					try {
+						yPlayer = await ysdk.getPlayer({ scopes: false });
+					} catch(e) {
+						console.warn('[PlatformSDK JS] ysdk.getPlayer error:', e);
+					}
+				}
+				return yPlayer;
+			}
+
+			async function saveData(key, value) {
+				const strVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
+				let savedInCloud = false;
+
+				// 1. Try SDK Cloud Save if player is authorized
+				if (currentPlatform === 'yandex') {
+					try {
+						const p = await getPlayerSafe();
+						if (p && p.getMode() !== 'lite') {
+							const dataObj = {};
+							dataObj[key] = value;
+							await p.setData(dataObj, true);
+							savedInCloud = true;
+							console.log('[PlatformSDK JS] Saved "' + key + '" to Yandex Cloud Storage.');
+						}
+					} catch(e) {
+						console.warn('[PlatformSDK JS] Yandex setData error:', e);
+					}
+				} else if (currentPlatform === 'crazygames') {
+					try {
+						if (window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.data && window.CrazyGames.SDK.data.setItem) {
+							await window.CrazyGames.SDK.data.setItem(key, value);
+							savedInCloud = true;
+							console.log('[PlatformSDK JS] Saved "' + key + '" to CrazyGames Data Storage.');
+						}
+					} catch(e) {
+						console.warn('[PlatformSDK JS] CrazyGames setItem error:', e);
+					}
+				}
+
+				// 2. Always maintain local cache in localStorage (or fallback if guest/unauthorized)
+				try {
+					localStorage.setItem(key, strVal);
+				} catch(e) {}
+			}
+
+			async function loadData(key) {
+				// 1. Check SDK Cloud Save if player is authorized
+				if (currentPlatform === 'yandex') {
+					try {
+						const p = await getPlayerSafe();
+						if (p && p.getMode() !== 'lite') {
+							const res = await p.getData([key]);
+							if (res && res[key] !== undefined && res[key] !== null) {
+								return res[key];
+							}
+						}
+					} catch(e) {}
+				} else if (currentPlatform === 'crazygames') {
+					try {
+						if (window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.data && window.CrazyGames.SDK.data.getItem) {
+							const val = await window.CrazyGames.SDK.data.getItem(key);
+							if (val !== undefined && val !== null) return val;
+						}
+					} catch(e) {}
+				}
+
+				// 2. Fallback to localStorage
+				try {
+					const localVal = localStorage.getItem(key);
+					if (localVal !== null && localVal !== undefined) return localVal;
+				} catch(e) {}
+
+				return null;
+			}
+
+			function setLanguage(lang) {
+				saveData('playtopia_lang', lang);
+			}
+
+			function getLanguage() {
+				// 1. Yandex Games SDK detection (queries ysdk.environment.i18n.lang first so debug panel logs i18n usage)
+				if (currentPlatform === 'yandex') {
+					if (ysdk && ysdk.environment && ysdk.environment.i18n && ysdk.environment.i18n.lang) {
+						const yLang = ysdk.environment.i18n.lang.toLowerCase();
+						if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(yLang)) return 'ru';
+						return 'en';
+					}
+					try {
+						const urlParams = new URLSearchParams(window.location.search);
+						const qLang = (urlParams.get('lang') || '').toLowerCase();
+						if (qLang) {
+							if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(qLang)) return 'ru';
+							return 'en';
+						}
+					} catch(e) {}
+				}
+
+				// 2. Check user preference saved locally (cached from cloud or guest)
+				try {
+					const saved = localStorage.getItem('playtopia_lang');
+					if (saved && (saved === 'ru' || saved === 'en')) return saved;
+				} catch(e) {}
+
+				// 3. CrazyGames SDK & URL detection
+				if (currentPlatform === 'crazygames') {
+					try {
+						const urlParams = new URLSearchParams(window.location.search);
+						const qLocale = (urlParams.get('locale') || urlParams.get('lang') || urlParams.get('language') || '').toLowerCase();
+						if (qLocale) {
+							if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(qLocale)) return 'ru';
+							return 'en';
+						}
+					} catch(e) {}
+
+					if (window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.user) {
+						try {
+							const sysInfo = window.CrazyGames.SDK.user.getSystemInfo ? window.CrazyGames.SDK.user.getSystemInfo() : null;
+							const country = (sysInfo && sysInfo.countryCode ? sysInfo.countryCode : '').toUpperCase();
+							if (['RU', 'BY', 'KZ', 'UA', 'UZ', 'KG', 'TJ', 'AM', 'AZ'].includes(country)) return 'ru';
+						} catch(e) {}
+					}
+				}
+
+				// 4. Browser / Navigator Language fallback
+				try {
+					const navLang = (navigator.languages && navigator.languages.length ? navigator.languages[0] : (navigator.language || '')).toLowerCase();
+					if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(navLang)) return 'ru';
+				} catch(e) {}
+
+				return 'en';
+			}
+
+			function getPlatform() {
+				return currentPlatform;
+			}
+
+			// Auto-initialize SDK
+			init();
+
+			return {
+				init,
+				gameReady,
+				gameplayStart,
+				gameplayStop,
+				showInterstitial,
+				showRewarded,
+				happyTime,
+				saveData,
+				loadData,
+				setLanguage,
+				getLanguage,
+				getPlatform
+			};
+		})();
+		</script>
+
+		<script src="$GODOT_URL"></script>
+		<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const statusOverlay = document.getElementById('status');
+	const loadingLabel = document.getElementById('loading-label');
+	const progressVal = document.getElementById('progress-val');
+	const statusNotice = document.getElementById('status-notice');
+
+	const gridLayer = document.getElementById('grid-iris-layer');
+	const COLS = 10;
+	const ROWS = 6;
+	const circles = [];
+
+	// Build the 10x6 circle grid
+	if (gridLayer) {
+		for (let r = 0; r < ROWS; r++) {
+			for (let c = 0; c < COLS; c++) {
+				const cell = document.createElement('div');
+				cell.className = 'grid-cell';
+				const circle = document.createElement('div');
+				circle.className = 'grid-circle';
+				cell.appendChild(circle);
+				gridLayer.appendChild(cell);
+				circles.push({ el: circle, col: c, row: r });
+			}
+		}
+	}
+
+	let isTransitioning = false;
+	let _transitionEpoch = 0; // Monotonic counter to invalidate stale setTimeout callbacks
+
+	// Smooth continuous progress percentage interpolator
+	let displayedPct = 0;
+	let targetPct = 0;
+	let isProgressActive = true;
+
+	function tickProgress() {
+		if (!isProgressActive) return;
+		if (displayedPct < targetPct) {
+			const step = Math.max(0.4, (targetPct - displayedPct) * 0.08);
+			displayedPct = Math.min(targetPct, displayedPct + step);
+			if (progressVal) {
+				progressVal.textContent = Math.floor(displayedPct) + '%';
+			}
+		}
+		requestAnimationFrame(tickProgress);
+	}
+	requestAnimationFrame(tickProgress);
+
+	function displayFailureNotice(err) {
+		console.error(err);
+		statusNotice.style.display = 'block';
+		statusNotice.textContent = err && err.message ? err.message : String(err);
+	}
+
+	// Cancel all running Web Animations on circle elements and reset them
+	function _cancelAllCircleAnimations() {
+		circles.forEach(({ el }) => {
+			el.getAnimations().forEach(a => a.cancel());
+			el.style.transform = 'scale(0)';
+		});
+		if (gridLayer) gridLayer.style.visibility = 'hidden';
+	}
+
+	function getLocalizedLoadingText() {
+		try {
+			if (window.PlatformSDK && window.PlatformSDK.getLanguage) {
+				const l = window.PlatformSDK.getLanguage();
+				if (l === 'ru') return 'Загрузка...';
+				if (l === 'en') return 'Loading...';
+			}
+			const urlParams = new URLSearchParams(window.location.search);
+			const qLang = (urlParams.get('lang') || urlParams.get('locale') || urlParams.get('language') || '').toLowerCase();
+			if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(qLang)) return 'Загрузка...';
+			const saved = localStorage.getItem('playtopia_lang');
+			if (saved === 'ru') return 'Загрузка...';
+			if (saved === 'en') return 'Loading...';
+			const navLang = (navigator.languages && navigator.languages.length ? navigator.languages[0] : (navigator.language || '')).toLowerCase();
+			if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(navLang)) return 'Загрузка...';
+		} catch(e) {}
+		return 'Loading...';
+	}
+
+	function getLocalizedReadyText() {
+		try {
+			if (window.PlatformSDK && window.PlatformSDK.getLanguage) {
+				const l = window.PlatformSDK.getLanguage();
+				if (l === 'ru') return 'Готово!';
+				if (l === 'en') return 'Ready!';
+			}
+			const urlParams = new URLSearchParams(window.location.search);
+			const qLang = (urlParams.get('lang') || urlParams.get('locale') || urlParams.get('language') || '').toLowerCase();
+			if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(qLang)) return 'Готово!';
+			const saved = localStorage.getItem('playtopia_lang');
+			if (saved === 'ru') return 'Готово!';
+			if (saved === 'en') return 'Ready!';
+			const navLang = (navigator.languages && navigator.languages.length ? navigator.languages[0] : (navigator.language || '')).toLowerCase();
+			if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(navLang)) return 'Готово!';
+		} catch(e) {}
+		return 'Ready!';
+	}
+
+	// Global bridge functions (callable from GDScript anytime)
+	window.updateLoadingStatus = function(statusText) {
+		if (loadingLabel) {
+			loadingLabel.textContent = statusText || getLocalizedLoadingText();
+			if (progressVal) progressVal.style.display = 'none';
+		}
+	};
+
+	window.showLoadingScreen = function(statusText) {
+		// Bump epoch to invalidate any pending setTimeout from previous transitions
+		const epoch = ++_transitionEpoch;
+		isTransitioning = false;
+
+		// Cancel any in-flight circle animations from a previous hide/show
+		_cancelAllCircleAnimations();
+
+		if (loadingLabel) {
+			loadingLabel.textContent = statusText || getLocalizedLoadingText();
+			if (progressVal) progressVal.style.display = 'none';
+		}
+
+		// If the game was already running and loading screen is hidden, play wave transition back to loading screen
+		if (statusOverlay && (statusOverlay.style.visibility === 'hidden' || statusOverlay.style.opacity === '0')) {
+			isTransitioning = true;
+			if (gridLayer && circles.length > 0) {
+				gridLayer.style.visibility = 'visible';
+
+				// Phase 1: Circles grow from left to right (scale 0 -> 1.5)
+				circles.forEach(({ el, col, row }) => {
+					const delay = (col * 28) + (row * 10);
+					el.animate([
+						{ transform: 'scale(0)' },
+						{ transform: 'scale(1.5)' }
+					], {
+						duration: 300,
+						delay: delay,
+						easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+						fill: 'forwards'
+					});
+				});
+
+				const maxDelay = (9 * 28) + (5 * 10) + 300;
+				setTimeout(() => {
+					if (_transitionEpoch !== epoch) return; // Stale
+					// Screen is full black. Re-show the loading screen with cover art
+					statusOverlay.style.visibility = 'visible';
+					statusOverlay.style.opacity = '1';
+					statusOverlay.style.pointerEvents = 'auto';
+
+					// Phase 2: Circles shrink from left to right (scale 1.5 -> 0), revealing loading screen
+					circles.forEach(({ el, col, row }) => {
+						const delay = (col * 28) + (row * 10);
+						el.animate([
+							{ transform: 'scale(1.5)' },
+							{ transform: 'scale(0)' }
+						], {
+							duration: 300,
+							delay: delay,
+							easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+							fill: 'forwards'
+						});
+					});
+
+					setTimeout(() => {
+						if (_transitionEpoch !== epoch) return;
+						gridLayer.style.visibility = 'hidden';
+						isTransitioning = false;
+					}, maxDelay);
+				}, maxDelay);
+			} else {
+				statusOverlay.style.visibility = 'visible';
+				statusOverlay.style.opacity = '1';
+				statusOverlay.style.pointerEvents = 'auto';
+				isTransitioning = false;
+			}
+		} else if (statusOverlay) {
+			statusOverlay.style.visibility = 'visible';
+			statusOverlay.style.opacity = '1';
+			statusOverlay.style.pointerEvents = 'auto';
+		}
+	};
+
+	window.hideLoadingScreen = function(statusText) {
+		if (isTransitioning) return;
+		// Bump epoch to invalidate any pending setTimeout from previous transitions
+		const epoch = ++_transitionEpoch;
+		isTransitioning = true;
+		isProgressActive = false;
+
+		if (loadingLabel) {
+			loadingLabel.textContent = statusText || getLocalizedReadyText();
+			if (progressVal) progressVal.style.display = 'none';
+		}
+
+		if (!gridLayer || circles.length === 0) {
+			statusOverlay.style.visibility = 'hidden';
+			statusOverlay.style.opacity = '0';
+			isTransitioning = false;
+			if (window.PlatformSDK) {
+				window.PlatformSDK.gameReady();
+				window.PlatformSDK.gameplayStart();
+			}
+			return;
+		}
+
+		gridLayer.style.visibility = 'visible';
+
+		// Phase 1: Black circles grow in a wave from left to right (scale 0 -> 1.5)
+		circles.forEach(({ el, col, row }) => {
+			const delay = (col * 28) + (row * 10);
+			el.animate([
+				{ transform: 'scale(0)' },
+				{ transform: 'scale(1.5)' }
+			], {
+				duration: 300,
+				delay: delay,
+				easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+				fill: 'forwards'
+			});
+		});
+
+		const maxDelay = (9 * 28) + (5 * 10) + 300;
+		setTimeout(() => {
+			if (_transitionEpoch !== epoch) return; // Stale
+			// Screen is now completely covered by black overlapping circles
+			statusOverlay.style.visibility = 'hidden';
+			statusOverlay.style.opacity = '0';
+
+			// Phase 2: Black circles shrink in a wave from left to right (scale 1.5 -> 0) revealing 3D scene
+			circles.forEach(({ el, col, row }) => {
+				const delay = (col * 28) + (row * 10);
+				el.animate([
+					{ transform: 'scale(1.5)' },
+					{ transform: 'scale(0)' }
+				], {
+					duration: 300,
+					delay: delay,
+					easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+					fill: 'forwards'
+				});
+			});
+
+			setTimeout(() => {
+				if (_transitionEpoch !== epoch) return;
+				gridLayer.style.visibility = 'hidden';
+				isTransitioning = false;
+				console.log('[Transition] Loading screen & circle grid animation fully completed. Signaling GRA & Gameplay Start...');
+				if (window.PlatformSDK) {
+					window.PlatformSDK.gameReady();
+					window.PlatformSDK.gameplayStart();
+				}
+			}, maxDelay);
+		}, maxDelay);
+	};
+
+	function getLocalizedStartingText() {
+		try {
+			if (window.PlatformSDK && window.PlatformSDK.getLanguage) {
+				const l = window.PlatformSDK.getLanguage();
+				if (l === 'ru') return 'Запуск...';
+				if (l === 'en') return 'Starting...';
+			}
+			const urlParams = new URLSearchParams(window.location.search);
+			const qLang = (urlParams.get('lang') || urlParams.get('locale') || urlParams.get('language') || '').toLowerCase();
+			if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(qLang)) return 'Запуск...';
+			const saved = localStorage.getItem('playtopia_lang');
+			if (saved === 'ru') return 'Запуск...';
+			if (saved === 'en') return 'Starting...';
+			const navLang = (navigator.languages && navigator.languages.length ? navigator.languages[0] : (navigator.language || '')).toLowerCase();
+			if (/^(ru|be|uk|kk|uz|ky|tg|hy|az)/.test(navLang)) return 'Запуск...';
+		} catch(e) {}
+		return 'Starting...';
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+
+	if (missing.length !== 0) {
+		displayFailureNotice('Ваш браузер не поддерживает необходимые Web-функции: ' + missing.join(', '));
+	} else {
+		engine.startGame({
+			'onProgress': function (current, total) {
+				if (total > 0) {
+					targetPct = Math.min(100, Math.round((current / total) * 100));
+					if (loadingLabel) {
+						loadingLabel.textContent = (targetPct >= 100) ? getLocalizedStartingText() : getLocalizedLoadingText();
+					}
+					if (progressVal) progressVal.style.display = 'inline-block';
+				}
+			},
+		}).then(() => {
+			targetPct = 100;
+			displayedPct = 100;
+			if (loadingLabel) loadingLabel.textContent = getLocalizedStartingText();
+			if (progressVal) progressVal.style.display = 'none';
+		}, displayFailureNotice);
+	}
+})();
+		</script>
+	</body>
 </html>
+
