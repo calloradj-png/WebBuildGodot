@@ -1,4 +1,4 @@
-# Godot 4 SCons build options for minimal 2D Web export template
+# Godot 4 SCons build options for minimal 2D Web export template (Extreme Size Optimization)
 # Usage:
 # Place this file as `custom.py` in the root of the Godot source tree,
 # or run SCons with: scons platform=web profile=custom.py
@@ -7,8 +7,8 @@ platform = "web"
 target = "template_release"
 arch = "wasm32"
 
-# Aggressive size optimization and Link Time Optimization (LTO)
-optimize = "size"
+# Ultra-aggressive size optimization (Godot 4.5+ -Oz mode) and Link Time Optimization (LTO)
+optimize = "size_extra"
 lto = "full"
 use_closure_compiler = "no"
 debug_symbols = "no"
@@ -26,8 +26,10 @@ dlink_enabled = "no"
 disable_3d = "yes"
 disable_physics_3d = "yes"
 
+# Disable heavy desktop GUI controls (Tree, CodeEdit, ColorPicker, FileDialog, RichTextLabel, etc.)
+disable_advanced_gui = "yes"
+
 # Text Server: Use Fallback Text Server instead of heavy ICU + HarfBuzz Advanced Text Server.
-# RichTextLabel and BBCode ([b], [color], [font_size], [shake], etc.) work completely!
 module_text_server_adv_enabled = "no"
 module_text_server_fb_enabled = "yes"
 
@@ -36,6 +38,13 @@ module_godot_physics_3d_enabled = "no"
 module_jolt_enabled = "no"
 module_navigation_3d_enabled = "no"
 module_raycast_enabled = "no"
+
+# Keep 2D Navigation (navigation_2d) and Font Generation (msdfgen) intact as requested!
+
+# Disable noise generator and interactive music
+module_noise_enabled = "no"
+module_interactive_music_enabled = "no"
+module_jsonrpc_enabled = "no"
 
 # Disable 3D import/export modules
 module_gltf_enabled = "no"
