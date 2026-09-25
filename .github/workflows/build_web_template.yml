@@ -7,10 +7,6 @@ on:
         description: 'Godot version tag (e.g. 4.7.2-stable, 4.7.1-stable, 4.6-stable)'
         required: true
         default: '4.7.2-stable'
-      emscripten_version:
-        description: 'Emscripten SDK version'
-        required: true
-        default: '3.1.64'
 
 jobs:
   build-web-template:
@@ -29,21 +25,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install scons
 
-      - name: Set up Emscripten cache
-        id: emscripten-cache
-        uses: actions/cache@v4
-        with:
-          path: 'emsdk-cache'
-          key: ${{ runner.os }}-emsdk-${{ inputs.emscripten_version }}
-
-      - name: Set up Emscripten
-        uses: mymindstorm/setup-emsdk@v3
-        with:
-          version: ${{ inputs.emscripten_version }}
-          actions-cache-folder: 'emsdk-cache'
+      - name: Set up Emscripten SDK
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git $HOME/emsdk
+          $HOME/emsdk/emsdk install 6.0.1 || $HOME/emsdk/emsdk install latest
+          $HOME/emsdk/emsdk activate 6.0.1 || $HOME/emsdk/emsdk activate latest
+          echo "$HOME/emsdk" >> $GITHUB_PATH
+          echo "$HOME/emsdk/upstream/emscripten" >> $GITHUB_PATH
+          echo "EMSDK=$HOME/emsdk" >> $GITHUB_ENV
+          echo "EMSDK_NODE=$HOME/emsdk/node" >> $GITHUB_ENV
 
       - name: Verify Emscripten
-        run: emcc --version
+        run: |
+          emcc --version
 
       - name: Clone Godot Engine Source
         run: |
