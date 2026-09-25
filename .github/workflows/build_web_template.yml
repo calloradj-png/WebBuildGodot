@@ -50,7 +50,7 @@ jobs:
       - name: Compile Godot Web Release Template
         working-directory: godot-src
         run: |
-          scons profile=custom.py -j$(nproc)
+          scons platform=web target=template_release profile=custom.py -j$(nproc)
 
       - name: Package Export Template
         working-directory: godot-src

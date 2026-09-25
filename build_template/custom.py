@@ -10,7 +10,7 @@ arch = "wasm32"
 # Aggressive size optimization and Link Time Optimization (LTO)
 optimize = "size"
 lto = "full"
-use_closure_compiler = "yes"
+use_closure_compiler = "no"
 debug_symbols = "no"
 
 # Single-threaded mode:
@@ -22,15 +22,12 @@ threads = "no"
 # Disable GDExtension dynamic linking (saves ~2-3 MB WASM size)
 dlink_enabled = "no"
 
-# Core 2D-only flags: Completely strip all 3D engine components (~15% size reduction)
+# Core 2D-only flags: Completely strip all 3D engine components
 disable_3d = "yes"
 disable_physics_3d = "yes"
 
-# Disable heavy desktop-centric GUI controls (Tree, CodeEdit, ColorPicker, GraphEdit, etc.)
-disable_advanced_gui = "yes"
-
 # Text Server: Use Fallback Text Server instead of heavy ICU + HarfBuzz Advanced Text Server.
-# The fallback text server supports Latin, Cyrillic, Greek, numbers, etc. and saves several megabytes.
+# RichTextLabel and BBCode ([b], [color], [font_size], [shake], etc.) work completely!
 module_text_server_adv_enabled = "no"
 module_text_server_fb_enabled = "yes"
 
